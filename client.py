@@ -16,17 +16,10 @@ try:
         cpu = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory().percent
         disk = psutil.disk_usage('/').percent
-
         netio = psutil.net_io_counters().bytes_sent
         loadAvg = psutil.getloadavg()[0]
-
-        temps = psutil.sensors_temperatures()
-        temp = 0
-        if temps:
-            first = list(temps.values())[0]
-            temp = first[0].current
-
-        message = f"{client_id}||{cpu:.2f}||{memory:.2f}||{disk:.2f}||{netio}||{loadAvg:.2f}||{temp:.2f}"
+        
+        message = f"{client_id}||{cpu:.2f}||{memory:.2f}||{disk:.2f}||{netio}||{loadAvg:.2f}"
 
         clientSocket.sendto(message.encode(), (serverName, serverPort))
 
