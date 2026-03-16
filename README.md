@@ -7,7 +7,7 @@ Dependencies: Python 3
 Install required library: pip install psutil
 
 Files:
-server.py   → monitoring server
+server.py   → monitoring server,
 client.py   → metric sender
 
 Running the Server:
