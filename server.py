@@ -29,10 +29,19 @@ try:
 
         if cpu > cpu_threshold:
             modifiedMessage = f"ALERT : CPU for {node} crossed threshold"
+        
         elif memory > memory_threshold:
             modifiedMessage = f"ALERT : Memory for {node} crossed threshold"
+        
         elif disk > disk_threshold:
             modifiedMessage = f"ALERT : Disk for {node} crossed threshold"
+        
+        elif loadavg > load_threshold:
+            modifiedMessage = f"ALERT : Load average high for {node}"
+        
+        elif temp > temp_threshold:
+            modifiedMessage = f"ALERT : Temperature high for {node}"
+        
         else:
             modifiedMessage = f"{node} is running normally"
 
