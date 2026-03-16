@@ -12,11 +12,5 @@ client.py   → metric sender
 
 **Commands to run:**
 
-python3 server.py
+python3 server.py\
 python3 client.py <node_id>
-
-
-Server listens on:
-port: 1000
-protocol: UDP
-Clients send metrics every 5 seconds.
