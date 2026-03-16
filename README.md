@@ -15,7 +15,7 @@ client.py   → metric sender
 python3 server.py
 python3 client.py <node_id>
 
-**------------------------------**
+
 Server listens on:
 port: 1000
 protocol: UDP
