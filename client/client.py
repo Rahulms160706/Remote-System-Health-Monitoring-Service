@@ -2,12 +2,22 @@ from socket import *
 import time
 import psutil
 import sys
+from dtls import do_patch
+do_patch()
+import ssl
 
 serverName = "192.168.137.1"
 serverPort = 1000
 
 clientSocket = socket(AF_INET, SOCK_DGRAM)
-clientSocket.settimeout(3)
+context = ssl.SSLContext(ssl.PROTOCOL_DTLSv1)
+context.verify_mode = ssl.CERT_REQUIRED
+context.check_hostname = False
+context.load_verify_locations("server-cert.pem")
+secureSocket = context.wrap_socket(clientSocket)
+
+secureSocket.settimeout(5)
+secureSocket.connect((serverName, serverPort))
 
 client_id = sys.argv[1]
 
@@ -21,10 +31,10 @@ try:
         
         message = f"{client_id}||{cpu:.2f}||{memory:.2f}||{disk:.2f}||{netio}||{loadAvg:.2f}"
 
-        clientSocket.sendto(message.encode(), (serverName, serverPort))
+        secureSocket.sendto(message.encode())
 
         try:
-            modifiedMessage, serverAddress = clientSocket.recvfrom(2048)
+            modifiedMessage = secureSocket.recvfrom(2048)
             print(modifiedMessage.decode())
         except timeout:
             print("No alert from the server")

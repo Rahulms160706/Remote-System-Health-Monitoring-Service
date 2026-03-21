@@ -1,10 +1,24 @@
+from time import *
 from socket import *
+import psutil
+from dtls import do_patch
+do_patch()
+import ssl
 
 serverPort = 1000
 serverSocket = socket(AF_INET, SOCK_DGRAM)
-
 serverSocket.bind(("", serverPort))
-print("The server is ready to receive")
+
+context = ssl.SSLContext(ssl.PROTOCOL_DTLSv1)
+context.load_cert_chain(certfile = "server-cert.pem", keyfile = "server-key.pem")
+
+secureSocket = context.wrap_socket(serverSocket, server_side=True)
+
+total_request = 0
+start_time = time()
+latencies = []
+
+print("DTLS server is ready to receive")
 
 cpu_threshold = 80
 memory_threshold = 85
@@ -13,7 +27,10 @@ load_threshold = 2.0
 
 try:
     while(True):
-        message, clientAddress = serverSocket.recvfrom(2048)
+        request_start = time()
+        message, clientAddress = secureSocket.recvfrom(2048)
+
+        total_request += 1
 
         node, cpu, memory, disk, netio, loadavg = message.decode().split("||")
 
@@ -40,7 +57,25 @@ try:
         else:
             modifiedMessage = f"{node} is running normally"
 
-        serverSocket.sendto(modifiedMessage.encode(), clientAddress)
+        secureSocket.sendto(modifiedMessage.encode(), clientAddress)
+
+        request_end = time()
+        latencies.append(request_end - request_start)
+
+        if total_request % 10 == 0:
+            elapsed = time() - start_time
+            throughput = total_request / elapsed
+            avg_latency = sum(latencies) / len(latencies)
+            server_cpu = psutil.cpu_percent()
+            server_mem = psutil.virtual_memory().percent
+
+            print("\n--- SERVER PERFORMANCE ---")
+            print(f"Requests handled: {total_request}")
+            print(f"Throughput: {throughput:.2f} req/sec")
+            print(f"Avg Latency: {avg_latency:.4f} sec")
+            print(f"Server CPU: {server_cpu}%")
+            print(f"Server Memory: {server_mem}%")
+            print("--------------------------\n")
 
 except KeyboardInterrupt:
     print("\nServer is shutting down")
