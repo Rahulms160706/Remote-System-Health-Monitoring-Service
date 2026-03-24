@@ -2,22 +2,18 @@ from socket import *
 import time
 import psutil
 import sys
-from dtls import do_patch
-do_patch()
-import ssl
+from cryptography.fernet import Fernet
+
+KEY = b'gZuGeUfiriA6avdQMY1zq_8BxBD5Gb0WBdWQszsWJcg='
+f = Fernet(KEY)
 
 serverName = "192.168.137.1"
 serverPort = 1000
 
 clientSocket = socket(AF_INET, SOCK_DGRAM)
-context = ssl.SSLContext(ssl.PROTOCOL_DTLSv1)
-context.verify_mode = ssl.CERT_REQUIRED
-context.check_hostname = False
-context.load_verify_locations("server-cert.pem")
-secureSocket = context.wrap_socket(clientSocket)
 
-secureSocket.settimeout(5)
-secureSocket.connect((serverName, serverPort))
+clientSocket.settimeout(5)
+clientSocket.connect((serverName, serverPort))
 
 client_id = sys.argv[1]
 
@@ -31,11 +27,16 @@ try:
         
         message = f"{client_id}||{cpu:.2f}||{memory:.2f}||{disk:.2f}||{netio}||{loadAvg:.2f}"
 
-        secureSocket.sendto(message.encode())
+        encrypted_message = f.encrypt(message.encode())
+        clientSocket.sendto(encrypted_message)
 
         try:
-            modifiedMessage = secureSocket.recvfrom(2048)
-            print(modifiedMessage.decode())
+            encrypted_response, _ = clientSocket.recvfrom(2048)
+            try:
+                decrypted_response = f.decrypt(encrypted_response)
+                print(decrypted_response.decode())
+            except Exception:
+                print("Decryption failed (tampered data)")
         except timeout:
             print("No alert from the server")
 

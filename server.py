@@ -1,18 +1,14 @@
 from time import *
 from socket import *
 import psutil
-from dtls import do_patch
-do_patch()
-import ssl
+from cryptography.fernet import Fernet
+
+KEY = b'gZuGeUfiriA6avdQMY1zq_8BxBD5Gb0WBdWQszsWJcg='
+f = Fernet(KEY)
 
 serverPort = 1000
 serverSocket = socket(AF_INET, SOCK_DGRAM)
 serverSocket.bind(("", serverPort))
-
-context = ssl.SSLContext(ssl.PROTOCOL_DTLSv1)
-context.load_cert_chain(certfile = "server-cert.pem", keyfile = "server-key.pem")
-
-secureSocket = context.wrap_socket(serverSocket, server_side=True)
 
 total_request = 0
 start_time = time()
@@ -28,7 +24,12 @@ load_threshold = 2.0
 try:
     while(True):
         request_start = time()
-        message, clientAddress = secureSocket.recvfrom(2048)
+        encrypted_message, clientAddress = serverSocket.recvfrom(2048)
+        try:
+            message = f.decrypt(encrypted_message)
+        except Exception:
+            print("Decryption failed (tampered packet)")
+            continue
 
         total_request += 1
 
@@ -57,7 +58,8 @@ try:
         else:
             modifiedMessage = f"{node} is running normally"
 
-        secureSocket.sendto(modifiedMessage.encode(), clientAddress)
+        encrypted_response = f.encrypt(modifiedMessage.encode())
+        serverSocket.sendto(encrypted_response, clientAddress)
 
         request_end = time()
         latencies.append(request_end - request_start)
