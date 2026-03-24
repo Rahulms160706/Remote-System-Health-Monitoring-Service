@@ -7,13 +7,12 @@ from cryptography.fernet import Fernet
 KEY = b'gZuGeUfiriA6avdQMY1zq_8BxBD5Gb0WBdWQszsWJcg='
 f = Fernet(KEY)
 
-serverName = "192.168.137.1"
-serverPort = 1000
+server = ("192.168.137.1", 1000)
 
 clientSocket = socket(AF_INET, SOCK_DGRAM)
 
 clientSocket.settimeout(5)
-clientSocket.connect((serverName, serverPort))
+clientSocket.connect(server)
 
 client_id = sys.argv[1]
 
@@ -28,7 +27,7 @@ try:
         message = f"{client_id}||{cpu:.2f}||{memory:.2f}||{disk:.2f}||{netio}||{loadAvg:.2f}"
 
         encrypted_message = f.encrypt(message.encode())
-        clientSocket.sendto(encrypted_message)
+        clientSocket.sendto(encrypted_message, server)
 
         try:
             encrypted_response, _ = clientSocket.recvfrom(2048)

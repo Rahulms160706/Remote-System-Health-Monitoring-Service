@@ -24,7 +24,7 @@ load_threshold = 2.0
 try:
     while(True):
         request_start = time()
-        encrypted_message, clientAddress = serverSocket.recvfrom(2048)
+        encrypted_message, clientAddress = serverSocket.recvfrom(4096)
         try:
             message = f.decrypt(encrypted_message)
         except Exception:
@@ -41,7 +41,7 @@ try:
         netio = float(netio)
         loadavg = float(loadavg)
 
-        print(f"{node} | CPU:{cpu}% MEM:{memory}% DISK:{disk}% LOAD:{loadavg}")
+        print(f"{node} | CPU:{cpu}% MEM:{memory}% DISK:{disk}% NETIO: {netio} LOAD:{loadavg}")
 
         if cpu > cpu_threshold:
             modifiedMessage = f"ALERT : CPU for {node} crossed threshold"
