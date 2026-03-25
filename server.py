@@ -14,7 +14,7 @@ total_request = 0
 start_time = time()
 latencies = []
 
-print("DTLS server is ready to receive")
+print("Server is ready to receive")
 
 cpu_threshold = 80
 memory_threshold = 85
