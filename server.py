@@ -1,86 +1,220 @@
-from time import *
 from socket import *
-import psutil
+from time import *
+import threading
 from cryptography.fernet import Fernet
 
 KEY = b'gZuGeUfiriA6avdQMY1zq_8BxBD5Gb0WBdWQszsWJcg='
 f = Fernet(KEY)
 
-serverPort = 1000
+serverPort = 5000
 serverSocket = socket(AF_INET, SOCK_DGRAM)
-serverSocket.bind(("", serverPort))
+serverSocket.bind(("0.0.0.0", serverPort))
 
-total_request = 0
-start_time = time()
-latencies = []
+print("🚀 Server running on port 5000...\n")
 
-print("Server is ready to receive")
+# -------------------------------
+# GLOBAL STATE
+# -------------------------------
+clients = {}        # node -> {addr, cpu, memory, last_seen}
+task_queue = []     # pending tasks
+in_progress = {}    # task -> {node, time}
+results = {}        # node -> total result
 
-cpu_threshold = 80
-memory_threshold = 85
-disk_threshold = 90
-load_threshold = 2.0
+lock = threading.Lock()
 
-try:
-    while(True):
-        request_start = time()
-        encrypted_message, clientAddress = serverSocket.recvfrom(4096)
-        try:
-            message = f.decrypt(encrypted_message)
-        except Exception:
-            print("Decryption failed (tampered packet)")
-            continue
+TASK_TIMEOUT = 10
 
-        total_request += 1
 
-        node, cpu, memory, disk, netio, loadavg = message.decode().split("||")
+# -------------------------------
+# TASK GENERATION
+# -------------------------------
+def generate_tasks(n, chunk_size=2000):
+    tasks = []
+    for start in range(2, n, chunk_size):
+        end = min(start + chunk_size - 1, n)
+        tasks.append((start, end))
+    return tasks
 
-        cpu = float(cpu)
-        memory = float(memory)
-        disk = float(disk)
-        netio = float(netio)
-        loadavg = float(loadavg)
 
-        print(f"{node} | CPU:{cpu}% MEM:{memory}% DISK:{disk}% NETIO: {netio} LOAD:{loadavg}")
+task_queue = generate_tasks(200000)
 
-        if cpu > cpu_threshold:
-            modifiedMessage = f"ALERT : CPU for {node} crossed threshold"
-        
-        elif memory > memory_threshold:
-            modifiedMessage = f"ALERT : Memory for {node} crossed threshold"
-        
-        elif disk > disk_threshold:
-            modifiedMessage = f"ALERT : Disk for {node} crossed threshold"
-        
-        elif loadavg > load_threshold:
-            modifiedMessage = f"ALERT : Load average high for {node}"
-        
+
+# -------------------------------
+# TASK ASSIGNMENT (LOAD AWARE)
+# -------------------------------
+def get_task_batch(node):
+    with lock:
+        if node not in clients:
+            return []
+
+        cpu = clients[node]["cpu"]
+        memory = clients[node]["memory"]
+
+        # 🔥 Capacity score
+        capacity = (100 - cpu) * 0.6 + (100 - memory) * 0.4
+
+        # 🔥 Decide batch size
+        if capacity > 120:
+            batch_size = 4
+        elif capacity > 80:
+            batch_size = 3
+        elif capacity > 50:
+            batch_size = 2
         else:
-            modifiedMessage = f"{node} is running normally"
+            batch_size = 1
 
-        encrypted_response = f.encrypt(modifiedMessage.encode())
-        serverSocket.sendto(encrypted_response, clientAddress)
+        batch = []
 
-        request_end = time()
-        latencies.append(request_end - request_start)
+        for _ in range(min(batch_size, len(task_queue))):
+            task = task_queue.pop(0)
+            in_progress[task] = {
+                "node": node,
+                "time": time()
+            }
+            batch.append(task)
 
-        if total_request % 10 == 0:
-            elapsed = time() - start_time
-            throughput = total_request / elapsed
-            avg_latency = sum(latencies) / len(latencies)
-            server_cpu = psutil.cpu_percent()
-            server_mem = psutil.virtual_memory().percent
+        return batch
 
-            print("\n--- SERVER PERFORMANCE ---")
-            print(f"Requests handled: {total_request}")
-            print(f"Throughput: {throughput:.2f} req/sec")
-            print(f"Avg Latency: {avg_latency:.4f} sec")
-            print(f"Server CPU: {server_cpu}%")
-            print(f"Server Memory: {server_mem}%")
-            print("--------------------------\n")
+
+# -------------------------------
+# REQUEUE FAILED TASKS
+# -------------------------------
+def requeue_stale_tasks():
+    while True:
+        sleep(2)
+        now = time()
+
+        with lock:
+            stale = [
+                task for task, info in in_progress.items()
+                if now - info["time"] > TASK_TIMEOUT
+            ]
+
+            for task in stale:
+                print(f"⚠️ Reassigning task {task}")
+                task_queue.append(task)
+                del in_progress[task]
+
+
+# -------------------------------
+# HANDLE MESSAGE
+# -------------------------------
+def handle_message(enc_msg, addr):
+    try:
+        msg = f.decrypt(enc_msg).decode()
+    except:
+        print("❌ Decryption failed")
+        return
+
+    parts = msg.split("||")
+    msg_type = parts[0]
+
+    # ================= METRIC =================
+    if msg_type == "METRIC":
+        node = parts[1]
+
+        try:
+            cpu = float(parts[2])
+            memory = float(parts[3])
+            disk = parts[4]
+            loadavg = parts[6]
+        except:
+            cpu, memory = 50, 50
+
+        # Store client info
+        with lock:
+            clients[node] = {
+                "addr": addr,
+                "cpu": cpu,
+                "memory": memory,
+                "last_seen": time()
+            }
+
+        # 🔥 PRINT METRICS
+        print(f"[METRIC] {node} | CPU:{cpu}% MEM:{memory}% DISK:{disk} LOAD:{loadavg}")
+
+        # Assign work
+        batch = get_task_batch(node)
+
+        if batch:
+            ranges_str = ";".join([f"{s},{e}" for s, e in batch])
+            msg = f"TASK||prime_range||{ranges_str}"
+            serverSocket.sendto(f.encrypt(msg.encode()), addr)
+
+            print(f"[TASK] {node} assigned → {ranges_str}")
+
+        else:
+            msg = "NO_TASK"
+            serverSocket.sendto(f.encrypt(msg.encode()), addr)
+
+    # ================= RESULT =================
+    elif msg_type == "RESULT":
+        _, node, task_type, total = parts
+        total = int(total)
+
+        print(f"[RESULT] {node} → {total}")
+
+        with lock:
+            if node not in results:
+                results[node] = 0
+            results[node] += total
+
+            # Remove completed tasks
+            done_tasks = [
+                task for task, info in in_progress.items()
+                if info["node"] == node
+            ]
+            for t in done_tasks:
+                del in_progress[t]
+
+        ack = "ACK||OK"
+        serverSocket.sendto(f.encrypt(ack.encode()), addr)
+
+
+# -------------------------------
+# MONITOR COMPLETION
+# -------------------------------
+def monitor_completion():
+    while True:
+        sleep(3)
+
+        with lock:
+            if not task_queue and not in_progress:
+                print("\n🎯 ALL TASKS COMPLETED\n")
+
+                total = sum(results.values())
+
+                print("📊 FINAL RESULTS PER CLIENT:")
+                for node, val in results.items():
+                    print(f"{node} → {val}")
+
+                print(f"\n🔥 TOTAL PRIME COUNT = {total}\n")
+                return
+
+
+# -------------------------------
+# THREADS
+# -------------------------------
+threading.Thread(target=requeue_stale_tasks, daemon=True).start()
+threading.Thread(target=monitor_completion, daemon=True).start()
+
+
+# -------------------------------
+# MAIN LOOP
+# -------------------------------
+try:
+    while True:
+        data, addr = serverSocket.recvfrom(4096)
+
+        threading.Thread(
+            target=handle_message,
+            args=(data, addr),
+            daemon=True
+        ).start()
 
 except KeyboardInterrupt:
-    print("\nServer is shutting down")
+    print("\n🛑 Server shutting down")
 
 finally:
     serverSocket.close()
+
