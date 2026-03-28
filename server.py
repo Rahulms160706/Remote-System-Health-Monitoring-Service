@@ -10,24 +10,17 @@ serverPort = 5000
 serverSocket = socket(AF_INET, SOCK_DGRAM)
 serverSocket.bind(("0.0.0.0", serverPort))
 
-print("🚀 Server running on port 5000...\n")
+print("Server running on port 5000...\n")
 
-# -------------------------------
-# GLOBAL STATE
-# -------------------------------
-clients = {}        # node -> {addr, cpu, memory, last_seen}
-task_queue = []     # pending tasks
-in_progress = {}    # task -> {node, time}
-results = {}        # node -> total result
+clients = {}        
+task_queue = []     
+in_progress = {}    
+results = {}        
 
 lock = threading.Lock()
 
 TASK_TIMEOUT = 10
 
-
-# -------------------------------
-# TASK GENERATION
-# -------------------------------
 def generate_tasks(n, chunk_size=2000):
     tasks = []
     for start in range(2, n, chunk_size):
@@ -38,10 +31,6 @@ def generate_tasks(n, chunk_size=2000):
 
 task_queue = generate_tasks(200000)
 
-
-# -------------------------------
-# TASK ASSIGNMENT (LOAD AWARE)
-# -------------------------------
 def get_task_batch(node):
     with lock:
         if node not in clients:
@@ -49,11 +38,9 @@ def get_task_batch(node):
 
         cpu = clients[node]["cpu"]
         memory = clients[node]["memory"]
-
-        # 🔥 Capacity score
-        capacity = (100 - cpu) * 0.6 + (100 - memory) * 0.4
-
-        # 🔥 Decide batch size
+        
+        capacity = (100 - cpu) * 0.6 + (100 - memory) * 0.4\
+        
         if capacity > 120:
             batch_size = 4
         elif capacity > 80:
@@ -75,10 +62,6 @@ def get_task_batch(node):
 
         return batch
 
-
-# -------------------------------
-# REQUEUE FAILED TASKS
-# -------------------------------
 def requeue_stale_tasks():
     while True:
         sleep(2)
@@ -95,10 +78,6 @@ def requeue_stale_tasks():
                 task_queue.append(task)
                 del in_progress[task]
 
-
-# -------------------------------
-# HANDLE MESSAGE
-# -------------------------------
 def handle_message(enc_msg, addr):
     try:
         msg = f.decrypt(enc_msg).decode()
@@ -108,8 +87,7 @@ def handle_message(enc_msg, addr):
 
     parts = msg.split("||")
     msg_type = parts[0]
-
-    # ================= METRIC =================
+    
     if msg_type == "METRIC":
         node = parts[1]
 
@@ -121,7 +99,6 @@ def handle_message(enc_msg, addr):
         except:
             cpu, memory = 50, 50
 
-        # Store client info
         with lock:
             clients[node] = {
                 "addr": addr,
@@ -130,10 +107,8 @@ def handle_message(enc_msg, addr):
                 "last_seen": time()
             }
 
-        # 🔥 PRINT METRICS
         print(f"[METRIC] {node} | CPU:{cpu}% MEM:{memory}% DISK:{disk} LOAD:{loadavg}")
 
-        # Assign work
         batch = get_task_batch(node)
 
         if batch:
@@ -147,7 +122,6 @@ def handle_message(enc_msg, addr):
             msg = "NO_TASK"
             serverSocket.sendto(f.encrypt(msg.encode()), addr)
 
-    # ================= RESULT =================
     elif msg_type == "RESULT":
         _, node, task_type, total = parts
         total = int(total)
@@ -159,7 +133,6 @@ def handle_message(enc_msg, addr):
                 results[node] = 0
             results[node] += total
 
-            # Remove completed tasks
             done_tasks = [
                 task for task, info in in_progress.items()
                 if info["node"] == node
@@ -170,10 +143,6 @@ def handle_message(enc_msg, addr):
         ack = "ACK||OK"
         serverSocket.sendto(f.encrypt(ack.encode()), addr)
 
-
-# -------------------------------
-# MONITOR COMPLETION
-# -------------------------------
 def monitor_completion():
     while True:
         sleep(3)
@@ -191,17 +160,9 @@ def monitor_completion():
                 print(f"\n🔥 TOTAL PRIME COUNT = {total}\n")
                 return
 
-
-# -------------------------------
-# THREADS
-# -------------------------------
 threading.Thread(target=requeue_stale_tasks, daemon=True).start()
 threading.Thread(target=monitor_completion, daemon=True).start()
 
-
-# -------------------------------
-# MAIN LOOP
-# -------------------------------
 try:
     while True:
         data, addr = serverSocket.recvfrom(4096)
