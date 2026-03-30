@@ -3,23 +3,23 @@ from time import *
 import threading
 from cryptography.fernet import Fernet
 
-KEY = b'gZuGeUfiriA6avdQMY1zq_8BxBD5Gb0WBdWQszsWJcg='
+KEY = b'gZuGeUfiriA6avdQMY1zq_8BxBD5Gb0WBdWQszsWJcg=' # generating key from key_gen.py
 f = Fernet(KEY)
 
 serverPort = 5000
 serverSocket = socket(AF_INET, SOCK_DGRAM)
-serverSocket.bind(("0.0.0.0", serverPort))
+serverSocket.bind(("0.0.0.0", serverPort)) # 0.0.0.0 listens to all end systems on the network
 
 print("Server running on port 5000...\n")
 
-clients = {}        
+clients = {}  
 task_queue = []     
 in_progress = {}    
 results = {}        
 
 lock = threading.Lock()
 
-TASK_TIMEOUT = 10
+TASK_TIMEOUT = 10 # secs
 
 def generate_tasks(n, chunk_size=2000):
     tasks = []
@@ -29,7 +29,7 @@ def generate_tasks(n, chunk_size=2000):
     return tasks
 
 
-task_queue = generate_tasks(200000)
+task_queue = generate_tasks(100000) # the upper limit of prime numbers assigned to clients
 
 def get_task_batch(node):
     with lock:
@@ -39,10 +39,10 @@ def get_task_batch(node):
         cpu = clients[node]["cpu"]
         memory = clients[node]["memory"]
         
-        capacity = (100 - cpu) * 0.6 + (100 - memory) * 0.4
+        capacity = (100 - cpu) * 0.6 + (100 - memory) * 0.4 # this helps us in deciding how much amount of task can be given to the client side
         
         if capacity > 120:
-            batch_size = 4
+            batch_size = 4 
         elif capacity > 80:
             batch_size = 3
         elif capacity > 50:
@@ -62,7 +62,7 @@ def get_task_batch(node):
 
         return batch
 
-def requeue_stale_tasks():
+def requeue_stale_tasks(): # incase a task remains idle for more than timeout given, this will reassign the task to the client again based on the threshold values
     while True:
         sleep(2)
         now = time()
@@ -74,15 +74,15 @@ def requeue_stale_tasks():
             ]
 
             for task in stale:
-                print(f"⚠️ Reassigning task {task}")
+                print(f"Reassigning task {task}")
                 task_queue.append(task)
                 del in_progress[task]
 
-def handle_message(enc_msg, addr):
+def handle_message(enc_msg, addr): # this takes in the metric values and based on that it is sending to the client the amount of tasks from the function call done for getting task batch 
     try:
         msg = f.decrypt(enc_msg).decode()
     except:
-        print("❌ Decryption failed")
+        print("Decryption failed")
         return
 
     parts = msg.split("||")
@@ -109,7 +109,7 @@ def handle_message(enc_msg, addr):
 
         print(f"[METRIC] {node} | CPU:{cpu}% MEM:{memory}% DISK:{disk} LOAD:{loadavg}")
 
-        batch = get_task_batch(node)
+        batch = get_task_batch(node) # this will give us the amount of batch given to each client
 
         if batch:
             ranges_str = ";".join([f"{s},{e}" for s, e in batch])
@@ -140,7 +140,7 @@ def handle_message(enc_msg, addr):
             for t in done_tasks:
                 del in_progress[t]
 
-        ack = "ACK||OK"
+        ack = "ACK||OK" # this message is being sent to the client telling that the result is received from the client side 
         serverSocket.sendto(f.encrypt(ack.encode()), addr)
 
 def monitor_completion():
@@ -149,15 +149,15 @@ def monitor_completion():
 
         with lock:
             if not task_queue and not in_progress:
-                print("\n🎯 ALL TASKS COMPLETED\n")
+                print("\nALL TASKS COMPLETED\n")
 
                 total = sum(results.values())
 
-                print("📊 FINAL RESULTS PER CLIENT:")
+                print("FINAL RESULTS PER CLIENT:") # this gives the final result obtained from each client
                 for node, val in results.items():
                     print(f"{node} → {val}")
 
-                print(f"\n🔥 TOTAL PRIME COUNT = {total}\n")
+                print(f"\nTOTAL PRIME COUNT = {total}\n") # this gives the final result of the task which is assigned to the clients
                 return
 
 threading.Thread(target=requeue_stale_tasks, daemon=True).start()
@@ -174,7 +174,7 @@ try:
         ).start()
 
 except KeyboardInterrupt:
-    print("\n🛑 Server shutting down")
+    print("\nServer shutting down")
 
 finally:
     serverSocket.close()
