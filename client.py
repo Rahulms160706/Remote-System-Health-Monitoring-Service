@@ -4,7 +4,7 @@ import psutil
 import sys
 from cryptography.fernet import Fernet
 
-KEY = b'gZuGeUfiriA6avdQMY1zq_8BxBD5Gb0WBdWQszsWJcg='
+KEY = b'gZuGeUfiriA6avdQMY1zq_8BxBD5Gb0WBdWQszsWJcg=' #key from key-gen.py
 f = Fernet(KEY)
 
 server = ("100.125.20.105", 5000)
@@ -17,7 +17,7 @@ client_id = sys.argv[1]
 
 def count_primes_range(start, end):
     count = 0
-    for num in range(start, end + 1):  
+    for num in range(start, end + 1):  # FIXED: inclusive range
         if num < 2:
             continue
         prime = True
@@ -32,11 +32,13 @@ def count_primes_range(start, end):
 
 try:
     while True:
+        # Collect system metrics
         cpu = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory().percent
         disk = psutil.disk_usage('/').percent
         netio = psutil.net_io_counters().bytes_sent
 
+        #if getting load average
         try:
             loadAvg = psutil.getloadavg()[0]
         except:
@@ -45,7 +47,7 @@ try:
         message = f"METRIC||{client_id}||{cpu:.2f}||{memory:.2f}||{disk:.2f}||{netio}||{loadAvg:.2f}"
         encrypted_message = f.encrypt(message.encode())
 
-        start_time = time.time()
+        start_time = time.time() #elapsed time
         clientSocket.sendto(encrypted_message, server)
 
         try:
@@ -57,6 +59,7 @@ try:
             parts = decrypted_response.decode().split("||")
             msg_type = parts[0]
 
+            # TASK HANDLING (MULTIPLE CHUNKS)
             if msg_type == "TASK":
                 _, task_type, ranges_data = parts
 
@@ -71,11 +74,13 @@ try:
 
                     print(f"{client_id} computed {start_val}-{end_val}")
 
+                # Send combined result
                 result_msg = f"RESULT||{client_id}||{task_type}||{total_result}"
                 clientSocket.sendto(f.encrypt(result_msg.encode()), server)
 
                 print(f"Total computed result: {total_result} | Latency: {latency:.2f} ms")
 
+                # Try receiving ACK (non-blocking safe)
                 try:
                     ack, _ = clientSocket.recvfrom(2048)
                     ack = f.decrypt(ack)
@@ -83,13 +88,15 @@ try:
                 except timeout:
                     print("ACK not received")
 
+            # NO TASK HANDLING
             elif msg_type == "NO_TASK":
-                print("All work completed. Exiting.")
+                print("All work completed. Exiting.") # all primes computed
                 break
 
         except timeout:
             print("No response from server")
-            
+
+        # Short delay (not too long)
         time.sleep(1)
 
 except KeyboardInterrupt:
