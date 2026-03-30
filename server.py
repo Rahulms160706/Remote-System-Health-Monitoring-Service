@@ -39,7 +39,7 @@ def get_task_batch(node):
         cpu = clients[node]["cpu"]
         memory = clients[node]["memory"]
         
-        capacity = (100 - cpu) * 0.6 + (100 - memory) * 0.4\
+        capacity = (100 - cpu) * 0.6 + (100 - memory) * 0.4
         
         if capacity > 120:
             batch_size = 4
